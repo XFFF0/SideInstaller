@@ -1,0 +1,90 @@
+name: sign-sideinstaller
+
+# Re-signs the SideInstaller IPA with every certificate in the cert pool and
+# publishes a tap-to-install page. The IPA source is whatever URL you put in
+# ipa-url.txt (editable any time) — or a one-off override passed below.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: "Override unsigned IPA URL (leave blank to use ipa-url.txt)"
+        required: false
+        default: ""
+      cert_zip_url:
+        description: "Override certificate pool zip URL (leave blank to use cert-url.txt)"
+        required: false
+        default: ""
+  push:
+    paths:
+      - "ipa-url.txt"          # re-run automatically when you point at a new IPA
+  schedule:
+    - cron: "0 23 * * *"       # daily refresh so the page tracks cert expiry
+
+concurrency:
+  group: sign-sideinstaller
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sign:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Make scripts executable
+        run: chmod +x scripts/sign_with_all_certs.sh scripts/generate_plist.sh scripts/generate_index.sh
+
+      - name: Sign IPA with all certificates
+        env:
+          # Dispatch overrides win; otherwise the scripts fall back to the
+          # ipa-url.txt / cert-url.txt files in the repo.
+          UNSIGNED_IPA_URL: ${{ github.event.inputs.ipa_url }}
+          CERT_ZIP_URL: ${{ github.event.inputs.cert_zip_url }}
+        run: ./scripts/sign_with_all_certs.sh
+
+      - name: Ensure signed IPAs exist
+        shell: bash
+        run: |
+          shopt -s nullglob
+          signed=(output/sideinstaller-*.ipa)
+          shopt -u nullglob
+          if [[ ${#signed[@]} -eq 0 ]]; then
+            echo "No signed IPAs were produced in output/." >&2
+            exit 1
+          fi
+          printf '%s\n' "${signed[@]}"
+
+      - name: Generate OTA manifests
+        run: ./scripts/generate_plist.sh
+
+      - name: Generate install page
+        run: ./scripts/generate_index.sh
+
+      - name: Commit and push generated files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A output index.html
+
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+            exit 0
+          fi
+
+          git commit -m "sign-sideinstaller: refresh signed IPAs, manifests, and install page"
+
+          for attempt in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" || true
+            if git push; then exit 0; fi
+            echo "Push failed; retrying (attempt $attempt)" >&2
+            sleep 5
+          done
+
+          echo "Failed to push after 3 attempts" >&2
+          exit 1
