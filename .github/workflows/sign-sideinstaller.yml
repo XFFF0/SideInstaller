@@ -26,7 +26,9 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: write   # commit generated files back to the repo
+  pages: write      # publish the install page to GitHub Pages
+  id-token: write   # required by actions/deploy-pages
 
 jobs:
   sign:
@@ -88,3 +90,29 @@ jobs:
 
           echo "Failed to push after 3 attempts" >&2
           exit 1
+
+      - name: Assemble Pages site
+        run: |
+          rm -rf _site
+          mkdir -p _site
+          cp index.html _site/index.html
+          # Install links inside index.html point at the committed raw-githubusercontent
+          # manifests, so the page works standalone; Pages just needs the page itself.
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  # Publishes the install page. Requires Settings -> Pages -> Source = "GitHub Actions"
+  # (one-time). This job is what shows up in the Actions tab as the Pages deploy.
+  deploy-pages:
+    needs: sign
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
