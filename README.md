@@ -25,3 +25,6 @@ And because it's open source, you don't have to take my word for any of it. The 
 
 # Is SideInstaller Safe?
 SideInstaller is built with safety and privacy in mind. The app is fully local and open source, which means anyone can inspect exactly what it does. Your Apple credentials also never leave your device, they're used locally, only to sign and install your apps, and are never transmitted, logged, or collected in any way. There's no server collecting your data, no analytics tracking what you do, and no account to sign up for. Everything happens on your iPhone and you can verify every line of it yourself in the source code.
+
+# Contributors
+- [@XFFF0](https://github.com/XFFF0)
